@@ -1,0 +1,9 @@
+{
+  "name": "codeledger",
+  "version": "1.0.0",
+  "description": "A self-building codebase index. Claude documents files as it works, so future tasks never read redundant code.",
+  "author": {
+    "name": "Yatharth Rai",
+    "url": "https://github.com/kindaRai"
+  }
+}
