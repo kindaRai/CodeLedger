@@ -73,6 +73,57 @@ Tailwind CSS 3, React Router v6, vite-plugin-pwa, mermaid 11
 | ... | ... | ... |
 ```
 
+### Node (`.claude/codeledger/nodes/backend-app.md`)
+
+```markdown
+# app.py
+
+## Summary
+Flask application entry point for Analogital. Configures CORS, initializes both SQLite databases (notes + users) on startup, and exposes the full API surface. Includes auth endpoints (register/login/logout/me), admin endpoints (users list, daily detail, purge), and rate-limits `/upload` to 5 pages/day per authenticated user. `ocr_text` is treated as immutable ground truth — bbox mutation endpoints update only `bbox_data`.
+
+## Functions
+- `_get_current_user()` — reads `Authorization: Bearer <token>` header, returns user dict or None
+- `_require_auth()` — returns (user, None) or (None, 401 response)
+- `_require_admin()` — returns (user, None) or (None, 401/403 response)
+- `auth_register()` — POST /auth/register: {email, password, access_token?}; access_token == ADMIN_ACCESS_TOKEN → is_admin=True; returns {token, user}
+- `auth_login()` — POST /auth/login: {email, password}; returns {token, user}
+- `auth_logout()` — POST /auth/logout: deletes session token
+- `auth_me()` — GET /auth/me: returns {id, email, is_admin, pages_today, daily_limit}
+- `admin_users()` — GET /admin/users: admin-only; returns all user stats
+- `admin_user_detail(user_id)` — GET /admin/users/<id>: admin-only; returns daily breakdown for one user
+- `admin_user_delete(user_id)` — DELETE /admin/users/<id>: admin-only; purges user + sessions + usage
+- `upload()` — POST /upload: requires auth; checks daily page limit (5); saves image, runs OCR pipeline, records usage (page_count + char_count), returns note data
+- `notes_list()` — GET /notes
+- `note_detail(note_id)` — GET /notes/<id>
+- `note_delete(note_id)` — DELETE /notes/<id>
+- `note_update(note_id)` — PATCH /notes/<id>
+- `note_bbox_update(note_id)` — PATCH /notes/<id>/bbox
+- `note_bbox_merge(note_id)` — POST /notes/<id>/bbox/merge
+- `_transcription_pos(bbox_text, ocr_text) -> int` — approximate char-index lookup for merge ordering
+- `note_crop(note_id)` — POST /notes/<id>/crop
+- `serve_upload(filename)` — GET /static/uploads/<filename>
+
+## Non-function code
+Loads `.env`. Creates `static/uploads/`. Calls `init_db()` and `init_users_db()` at module level. Imports `werkzeug.security` for password hashing.
+
+## Imports
+- database — all note/category/thread/link CRUD
+- ocr — extract_text_with_bbox
+- preprocessing — preprocess_image
+- tagging — generate_tags
+- users_db — auth + usage functions
+- werkzeug.security — generate_password_hash, check_password_hash
+
+## Imported by
+- (entry point, not imported)
+
+## Tags
+backend, api, flask, upload, routing, auth, admin, rate-limit
+
+## Node path
+backend/app.py
+```
+
 ### Node (`.claude/codeledger/nodes/frontend-src-components-CategoriesPanel.md`)
 
 ```markdown
