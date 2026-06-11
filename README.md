@@ -1,16 +1,27 @@
 # CodeLedger
 
-A self-building codebase index for Claude Code. CodeLedger maintains a lightweight index and per-file node documents so Claude never reads redundant code across sessions.
+A self-building codebase index for Claude Code. CodeLedger maintains a lightweight markdown index and per-file node documents so Claude can identify the relevant files for a task without re-reading the whole codebase across sessions.
 
 ## How it works
 
 **First task (no index yet)**
-Claude works normally, documents every file it reads, then builds the index after the task is done.
+Claude works normally, documents every file relevant to the task, then builds the index after the task is done.
 
 **Every task after**
-Claude reads the index first, identifies the relevant node files, and works with full context — without touching files it doesn't need.
+Claude reads the index first, identifies the relevant node files, and works from those summaries — opening source files only for the ones it's actually going to edit.
+
+Nodes are for **triage and discovery**: deciding which files matter and how they connect. When Claude edits a file, it always reads the real source first — summaries inform *which* files to open, not what their exact contents are.
 
 ## Install
+
+### As a plugin (recommended)
+
+```
+/plugin marketplace add <your-github>/codeledger
+/plugin install codeledger@codeledger
+```
+
+### Manual
 
 Drop the skill into your project:
 
@@ -33,10 +44,12 @@ C:\Users\YourName\.claude\skills\codeledger\SKILL.md   # Windows
 
 ```
 .claude/codeledger/
-├── index.md          ← project summary, tech stack, file list
+├── index.md          ← project summary, tech stack, file list with status
 └── nodes/
-    └── src-auth-login.md   ← one node per source file touched
+    └── src__auth__login.ts.md   ← one node per source file touched
 ```
+
+Node filenames encode the source path by replacing each `/` with `__` (double underscore), keeping the original filename — dashes included — intact. So `src/my-utils/parse-config.ts` becomes `src__my-utils__parse-config.ts.md`, and the mapping is unambiguous in both directions.
 
 Both files are plain markdown — git-tracked, human-readable, and diffable in PRs.
 
@@ -61,19 +74,22 @@ Gemini 2.5 Flash (transcription + tagging + crop), React 18, Vite 5,
 Tailwind CSS 3, React Router v6, vite-plugin-pwa, mermaid 11
 
 ## Files
-| File | Tags | Summary |
-|------|------|---------|
-| backend/app.py | backend, api, flask, auth, admin | Flask entry point — auth endpoints, admin endpoints, rate-limited upload, notes/bbox/crop/categories/threads/links |
-| backend/database.py | backend, database, sqlite | SQLite CRUD: notes (incl. delete_note with cascade) + categories + threads + note_links |
-| backend/users_db.py | backend, auth, database, users, rate-limit | Separate users.db: users + sessions + usage tables; session token auth; 5-pages/day enforcement |
-| backend/ocr.py | backend, ocr, google-cloud-vision, gemini | Hybrid OCR: Vision bboxes + Gemini text; enable_bbox flag skips Vision + call 2 |
-| frontend/src/App.jsx | frontend, routing, auth | Router root: AuthProvider wrapper; RequireAuth/RequireAdmin/GuestOnly guards; forks to desktop/mobile routes |
-| frontend/src/components/CategoriesPanel.jsx | frontend, component, categories, threads | Sub-tab panel for managing categories and threads with note assignment |
-| frontend/src/components/GraphView.jsx | frontend, component, graph, canvas | Force-directed knowledge graph: pointer+link tools, 420-frame simulation, info panel |
-| ... | ... | ... |
+| File | Tags | Summary | Status |
+|------|------|---------|--------|
+| backend/app.py | backend, api, flask, auth, admin | Flask entry point — auth endpoints, admin endpoints, rate-limited upload, notes/bbox/crop/categories/threads/links | active |
+| backend/database.py | backend, database, sqlite | SQLite CRUD: notes (incl. delete_note with cascade) + categories + threads + note_links | active |
+| backend/users_db.py | backend, auth, database, users, rate-limit | Separate users.db: users + sessions + usage tables; session token auth; 5-pages/day enforcement | active |
+| backend/ocr.py | backend, ocr, google-cloud-vision, gemini | Hybrid OCR: Vision bboxes + Gemini text; enable_bbox flag skips Vision + call 2 | active |
+| frontend/src/App.jsx | frontend, routing, auth | Router root: AuthProvider wrapper; RequireAuth/RequireAdmin/GuestOnly guards; forks to desktop/mobile routes | active |
+| frontend/src/components/CategoriesPanel.jsx | frontend, component, categories, threads | Sub-tab panel for managing categories and threads with note assignment | active |
+| frontend/src/components/GraphView.jsx | frontend, component, graph, canvas | Force-directed knowledge graph: pointer+link tools, 420-frame simulation, info panel | active |
+| backend/old_ocr.py | backend, ocr | Legacy single-call OCR pipeline | removed 2026-05-02 |
+| ... | ... | ... | ... |
 ```
 
-### Node (`.claude/codeledger/nodes/backend-app.md`)
+Deleted files keep their row with a `removed` status instead of vanishing, so Claude retains context about what used to exist. Stale entries are pruned after 90 days.
+
+### Node (`.claude/codeledger/nodes/backend__app.py.md`)
 
 ```markdown
 # app.py
@@ -122,9 +138,12 @@ backend, api, flask, upload, routing, auth, admin, rate-limit
 
 ## Node path
 backend/app.py
+
+## Last verified
+2026-06-11
 ```
 
-### Node (`.claude/codeledger/nodes/frontend-src-components-CategoriesPanel.md`)
+### Node (`.claude/codeledger/nodes/frontend__src__components__CategoriesPanel.jsx.md`)
 
 ```markdown
 # CategoriesPanel.jsx
@@ -158,11 +177,22 @@ frontend, component, categories, threads, crud, sidebar-panel
 
 ## Node path
 frontend/src/components/CategoriesPanel.jsx
+
+## Last verified
+2026-06-11
 ```
+
+## Staying fresh
+
+Every node carries a `Last verified` date. Before relying on a node, Claude compares it against the source file's modification time — if the file was edited outside Claude (by you, a teammate, or another tool), the node is treated as stale, re-read from source, and rewritten. Nodes always describe the file's *current* state: no changelogs, no "NEW"/"CHANGED" markers, no references to previous versions.
 
 ## Notes
 
 - Tags are dynamic — Claude adds new ones as it encounters new patterns
-- Nodes are updated after every task that touches the file
+- Nodes are updated after every task that touches the file; `Last verified` is bumped on each update
 - The index is updated whenever files are added, removed, or significantly changed
-- Claude never re-reads a source file if a node exists for it — the node is the source of truth
+- Removed files and deprecated functions are soft-deleted (kept with a dated marker), then pruned after 90 days
+
+## When CodeLedger helps — and when it doesn't
+
+CodeLedger pays off on **medium-to-large codebases** worked across **many sessions**, where re-orienting Claude is the dominant cost. The real value is the index plus the import graph: Claude knows *which* files to touch without exploring. On very small projects, or for one-off tasks, the node-maintenance overhead can exceed the savings — detailed nodes for small files are a meaningful fraction of the source itself.
